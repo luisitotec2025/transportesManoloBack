@@ -11,6 +11,9 @@ import database
 import models
 import schemas
 
+BACKEND_URL = os.getenv("BACKEND_URL")
+
+
 # -----------------------------------
 # Inicialización de la aplicación
 # -----------------------------------
@@ -121,8 +124,10 @@ def agregar_vehiculo(
     db.commit()
     db.refresh(nuevo)
 
-    # ✅ URL absoluta para mostrar en el frontend
-    image_url = f"http://127.0.0.1:8000{foto_path}" if foto_path else None
+   
+    # ✅ URL absoluta para mostrar en el frontend usando la URL pública de Render
+    image_url = f"{BACKEND_URL}{foto_path}" if foto_path else None
+
 
     return {
         "mensaje": "✅ Vehículo agregado correctamente",
@@ -159,7 +164,9 @@ def enviar_correo_cotizacion(datos: dict):
         msg["To"] = user
         msg["Subject"] = f"📩 Nueva cotización: {datos['nombre']}"
 
-        foto_html = f'<img src="{datos["foto_url"]}" alt="Foto del vehículo" style="max-width: 100%; border-radius: 8px; margin-top: 10px;" />' if datos.get("foto_url") else "<p style='color: #888;'>Sin foto disponible</p>"
+        #foto_html = f'<img src="{datos["foto_url"]}" alt="Foto del vehículo" style="max-width: 100%; border-radius: 8px; margin-top: 10px;" />' if datos.get("foto_url") else "<p style='color: #888;'>Sin foto disponible</p>"
+        "foto_url": f"{BACKEND_URL}{vehiculo.foto}" if vehiculo.foto else None
+
 
         html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 20px auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); background: white;">
