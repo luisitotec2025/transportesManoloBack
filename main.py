@@ -146,6 +146,30 @@ def agregar_vehiculo(
 
     return {"mensaje": "✅ Vehículo agregado correctamente", "id": nuevo.id, "foto_url": foto_url}
 
+
+
+#Eliminar vehiculo
+
+@app.delete("/vehiculos/eliminar/{vehiculo_id}", summary="Eliminar un vehículo por ID")
+def eliminar_vehiculo(vehiculo_id: int, db: Session = Depends(get_db)):
+    """
+    Elimina un vehículo de la base de datos.
+    
+    - **vehiculo_id**: ID del vehículo a eliminar (entero)
+    
+    Retorna un mensaje de confirmación si se elimina correctamente.
+    """
+    vehiculo = db.query(models.Vehiculo).filter(models.Vehiculo.id == vehiculo_id).first()
+    if not vehiculo:
+        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
+    
+    db.delete(vehiculo)
+    db.commit()
+    return {"mensaje": "✅ Vehículo eliminado correctamente", "id": vehiculo_id}
+
+
+
+
 # ------------------------------
 # Función para enviar correo HTML
 # ------------------------------
