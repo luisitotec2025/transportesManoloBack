@@ -226,3 +226,8 @@ def agregar_cotizacion(cotizacion: CotizacionRequest, db: Session = Depends(get_
 
     enviar_correo_cotizacion(datos_correo)
     return {"mensaje": "Cotización enviada correctamente"}
+
+
+@app.get("/")
+def root():
+    return {"mensaje": "🚀 Backend de Transportes Manolo activo"}
