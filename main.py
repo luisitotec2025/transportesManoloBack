@@ -234,22 +234,3 @@ def agregar_cotizacion(cotizacion: CotizacionRequest, db: Session = Depends(get_
     enviar_correo_cotizacion(datos_correo)
     return {"mensaje": "Cotización enviada correctamente"}
 
-@app.post("/cotizaciones/agregar/")
-def agregar_cotizacion(cotizacion: CotizacionRequest, db: Session = Depends(get_db)):
-    vehiculo = db.query(models.Vehiculo).filter(models.Vehiculo.id == cotizacion.vehiculo_id).first()
-    if not vehiculo:
-        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
-
-    # Solo para prueba: omitimos el envío de correo
-    # datos_correo = cotizacion.dict()
-    # datos_correo.update({
-    #     "marca": vehiculo.marca,
-    #     "modelo": vehiculo.modelo,
-    #     "anio": vehiculo.anio,
-    #     "placa": vehiculo.placa,
-    #     "tipo": vehiculo.tipo,
-    #     "foto_url": vehiculo.foto
-    # })
-    # enviar_correo_cotizacion(datos_correo)  # ← COMENTADO
-
-    return {"mensaje": "✅ Cotización recibida (correo desactivado para prueba)"}
