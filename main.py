@@ -213,7 +213,23 @@ class CotizacionRequest(BaseModel):
     comentario: Optional[str] = None
 
 @app.post("/cotizaciones/agregar/")
-def agregar_cotizacion(cotizacion: CotizacionRequest):
-    # Sin DB, sin correo: solo respuesta inmediata
-    return {"mensaje": "✅ Backend responde, sin depender de nada"}
+def agregar_cotizacion(cotizacion: CotizacionRequest, db: Session = Depends(get_db)):
+    vehiculo = db.query(models.Vehiculo).filter(models.Vehiculo.id == cotizacion.vehiculo_id).first()
+    if not vehiculo:
+        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
 
+    # Usar URL de Cloudinary directamente
+    foto_url = vehiculo.foto
+
+    datos_correo = cotizacion.dict()
+    datos_correo.update({
+        "marca": vehiculo.marca,
+        "modelo": vehiculo.modelo,
+        "anio": vehiculo.anio,
+        "placa": vehiculo.placa,
+        "tipo": vehiculo.tipo,
+        "foto_url": foto_url
+    })
+
+    enviar_correo_cotizacion(datos_correo)
+    return {"mensaje": "Cotización enviada correctamente"}
