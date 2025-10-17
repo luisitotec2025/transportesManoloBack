@@ -1,16 +1,24 @@
-from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
 import uuid
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv
-import socket
-import sys
 import logging
+import sys
+from dotenv import load_dotenv
+
+# Sendgrid (reemplaza a Gmail)
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+
+import database
+import models
+import schemas
+from pydantic import BaseModel
+
+import cloudinary
+import cloudinary.uploader
 
 # ✅ CONFIGURAR LOGGING CORRECTAMENTE
 logging.basicConfig(
@@ -23,26 +31,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-import database
-import models
-import schemas
-from pydantic import BaseModel
-
-import cloudinary
-import cloudinary.uploader
-
 # Cargar variables de entorno
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL")
-GMAIL_USER = os.getenv("GMAIL_USER")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@transportesmanolo.com")
+TO_EMAIL = os.getenv("TO_EMAIL", "blancoluisalfredo778@gmail.com")
 CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
 CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
 CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
 
 # Debug: Verificar variables
-print("✅ GMAIL_USER:", GMAIL_USER)
-print("✅ GMAIL_APP_PASSWORD:", "***" if GMAIL_APP_PASSWORD else "❌ NO CONFIGURADO")
+print("✅ SENDGRID_API_KEY:", "***" if SENDGRID_API_KEY else "❌ NO CONFIGURADO")
+print("✅ FROM_EMAIL:", FROM_EMAIL)
+print("✅ TO_EMAIL:", TO_EMAIL)
 
 # Configurar Cloudinary
 cloudinary.config(
@@ -93,7 +95,7 @@ def root():
 @app.get("/test-email/")
 def test_email():
     """Endpoint de prueba para verificar que el envío de correo funciona"""
-    print("🧪 TEST EMAIL: Iniciando prueba de correo...", flush=True)
+    logger.info("🧪 TEST EMAIL: Iniciando prueba de correo...")
     
     datos_prueba = {
         "nombre": "PRUEBA TEST",
@@ -113,7 +115,7 @@ def test_email():
     
     return {
         "mensaje": "Prueba de correo completada",
-        "resultado": "Exitoso" if resultado else "Fallido",
+        "resultado": "Exitoso ✅" if resultado else "Fallido ❌",
         "check_logs": "Revisa los logs de Render para ver los detalles"
     }
 
@@ -188,33 +190,29 @@ def eliminar_vehiculo(vehiculo_id: int, db: Session = Depends(get_db)):
     return {"mensaje": "✅ Vehículo eliminado correctamente", "id": vehiculo_id}
 
 # ============================================================
-# FUNCIÓN MEJORADA PARA ENVIAR CORREO (CON LOGGING)
+# FUNCIÓN PARA ENVIAR CORREO CON SENDGRID
 # ============================================================
 def enviar_correo_cotizacion(datos: dict):
-    """Envía correo con logging que se muestra en Render"""
+    """Envía correo usando Sendgrid (funciona en Render)"""
     try:
-        logger.info("=" * 60)
-        logger.info("🧪 INICIANDO ENVÍO DE CORREO")
-        logger.info("=" * 60)
-        logger.info(f"GMAIL_USER: {GMAIL_USER}")
-        logger.info(f"GMAIL_APP_PASSWORD configurada: {bool(GMAIL_APP_PASSWORD)}")
-        logger.info(f"Nombre del cliente: {datos.get('nombre')}")
+        logger.info("=" * 70)
+        logger.info("🧪 INICIANDO ENVÍO DE CORREO CON SENDGRID")
+        logger.info("=" * 70)
+        logger.info(f"SENDGRID_API_KEY configurada: {bool(SENDGRID_API_KEY)}")
+        logger.info(f"FROM_EMAIL: {FROM_EMAIL}")
+        logger.info(f"TO_EMAIL: {TO_EMAIL}")
+        logger.info(f"Cliente: {datos.get('nombre')}")
         
-        if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-            logger.error("❌ FALTA GMAIL_USER O GMAIL_APP_PASSWORD")
+        if not SENDGRID_API_KEY:
+            logger.error("❌ FALTA SENDGRID_API_KEY en variables de entorno")
             return False
 
-        logger.info("✅ Variables de entorno detectadas")
+        logger.info("✅ Sendgrid API Key detectada")
 
         foto_html = f'<img src="{datos["foto_url"]}" alt="Foto del vehículo" style="max-width:100%;border-radius:8px;margin-top:10px;" />' \
                     if datos.get("foto_url") else "<p style='color:#888;'>Sin foto disponible</p>"
 
-        msg = MIMEMultipart("alternative")
-        msg["From"] = GMAIL_USER
-        msg["To"] = GMAIL_USER
-        msg["Subject"] = f"📩 Nueva cotización: {datos['nombre']}"
-
-        html = f"""
+        html_content = f"""
         <div style="font-family: Arial, sans-serif; max-width:650px; margin:20px auto; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.1); background:white;">
             <div style="background: linear-gradient(120deg, #1976D2, #0D47A1); color:white; padding:24px; text-align:center;">
                 <h2>Nueva Solicitud de Cotización</h2>
@@ -242,68 +240,37 @@ def enviar_correo_cotizacion(datos: dict):
         </div>
         """
 
-        msg.attach(MIMEText(html, "html", "utf-8"))
-
         logger.info("📧 Construyendo mensaje de correo...")
-        logger.info("📧 Conectando a SMTP Gmail en puerto 587...")
         
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            logger.info("📧 ✅ Conexión establecida")
-            
-            logger.info("📧 Iniciando TLS...")
-            server.starttls()
-            logger.info("📧 ✅ TLS iniciado")
-            
-            logger.info(f"📧 Intentando login con: {GMAIL_USER}")
-            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            logger.info("📧 ✅ Login exitoso")
-            
-            logger.info(f"📧 Enviando correo a: {GMAIL_USER}...")
-            result = server.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
-            
-            logger.info(f"✅✅✅ ¡CORREO ENVIADO CORRECTAMENTE!")
-            logger.info(f"✅ Resultado del envío: {result}")
-            logger.info("=" * 60)
-            return True
+        message = Mail(
+            from_email=FROM_EMAIL,
+            to_emails=TO_EMAIL,
+            subject=f"📩 Nueva cotización: {datos['nombre']}",
+            html_content=html_content
+        )
 
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error("=" * 60)
-        logger.error("❌ ERROR DE AUTENTICACIÓN SMTP")
-        logger.error(f"Detalles del error: {str(e)}")
-        logger.error(f"Usuario usado: {GMAIL_USER}")
-        logger.error("Verifica que:")
-        logger.error("   1. GMAIL_USER sea correcto")
-        logger.error("   2. GMAIL_APP_PASSWORD sea la contraseña de APLICACIÓN (16 caracteres)")
-        logger.error("   3. La autenticación de 2 factores esté HABILITADA en Gmail")
-        logger.error("   4. La contraseña de aplicación sea para 'Correo' en Google")
-        logger.error("=" * 60)
-        return False
+        logger.info("📧 Inicializando cliente de Sendgrid...")
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
         
-    except socket.timeout:
-        logger.error("=" * 60)
-        logger.error("❌ TIMEOUT: No se pudo conectar a SMTP Gmail (timeout de 15 segundos)")
-        logger.error("Posible problema de red o Gmail bloqueando a Render")
-        logger.error("=" * 60)
-        return False
+        logger.info("📧 Enviando correo a través de Sendgrid...")
+        response = sg.send(message)
         
-    except smtplib.SMTPException as e:
-        logger.error("=" * 60)
-        logger.error(f"❌ ERROR SMTP GENERAL: {type(e).__name__}")
-        logger.error(f"Detalles: {str(e)}")
-        logger.error("=" * 60)
-        return False
-        
+        logger.info(f"✅✅✅ ¡CORREO ENVIADO CORRECTAMENTE!")
+        logger.info(f"✅ Código de estado: {response.status_code}")
+        logger.info("=" * 70)
+        return True
+
     except Exception as e:
-        logger.error("=" * 60)
-        logger.error(f"❌ ERROR INESPERADO: {type(e).__name__}")
+        logger.error("=" * 70)
+        logger.error(f"❌ ERROR AL ENVIAR CORREO: {type(e).__name__}")
         logger.error(f"Detalles: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
-        logger.error("=" * 60)
+        logger.error("=" * 70)
         return False
 
 # ============================================================
-# ENDPOINT: AGREGAR COTIZACIÓN (MEJORADO)
+# ENDPOINT: AGREGAR COTIZACIÓN
 # ============================================================
 class CotizacionRequest(BaseModel):
     vehiculo_id: int
@@ -330,8 +297,7 @@ def agregar_cotizacion(cotizacion: CotizacionRequest, db: Session = Depends(get_
         "foto_url": foto_url
     })
 
-    # ✅ Enviar correo directamente (sin background para que veas los logs)
+    # Enviar correo
     enviar_correo_cotizacion(datos_correo)
     
-    # ✅ Respuesta inmediata al cliente
     return {"mensaje": "✅ Cotización enviada correctamente", "status": "success"}
