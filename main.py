@@ -10,6 +10,18 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 import socket
 import sys
+import logging
+
+# ✅ CONFIGURAR LOGGING CORRECTAMENTE
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.StreamHandler(sys.stderr)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 import database
 import models
@@ -176,18 +188,23 @@ def eliminar_vehiculo(vehiculo_id: int, db: Session = Depends(get_db)):
     return {"mensaje": "✅ Vehículo eliminado correctamente", "id": vehiculo_id}
 
 # ============================================================
-# FUNCIÓN MEJORADA PARA ENVIAR CORREO (CON LOGS FLUSHEADOS)
+# FUNCIÓN MEJORADA PARA ENVIAR CORREO (CON LOGGING)
 # ============================================================
 def enviar_correo_cotizacion(datos: dict):
-    """Envía correo con logs que se muestren en Render"""
+    """Envía correo con logging que se muestra en Render"""
     try:
-        print("📧 ========== INICIANDO ENVÍO DE CORREO ==========", flush=True)
-        print(f"📧 GMAIL_USER: {GMAIL_USER}", flush=True)
-        print(f"📧 GMAIL_APP_PASSWORD configurada: {bool(GMAIL_APP_PASSWORD)}", flush=True)
+        logger.info("=" * 60)
+        logger.info("🧪 INICIANDO ENVÍO DE CORREO")
+        logger.info("=" * 60)
+        logger.info(f"GMAIL_USER: {GMAIL_USER}")
+        logger.info(f"GMAIL_APP_PASSWORD configurada: {bool(GMAIL_APP_PASSWORD)}")
+        logger.info(f"Nombre del cliente: {datos.get('nombre')}")
         
         if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-            print("❌ ERROR: Falta GMAIL_USER o GMAIL_APP_PASSWORD en variables de entorno", flush=True)
+            logger.error("❌ FALTA GMAIL_USER O GMAIL_APP_PASSWORD")
             return False
+
+        logger.info("✅ Variables de entorno detectadas")
 
         foto_html = f'<img src="{datos["foto_url"]}" alt="Foto del vehículo" style="max-width:100%;border-radius:8px;margin-top:10px;" />' \
                     if datos.get("foto_url") else "<p style='color:#888;'>Sin foto disponible</p>"
@@ -227,48 +244,62 @@ def enviar_correo_cotizacion(datos: dict):
 
         msg.attach(MIMEText(html, "html", "utf-8"))
 
-        print(f"📧 Conectando a SMTP Gmail en puerto 587...", flush=True)
+        logger.info("📧 Construyendo mensaje de correo...")
+        logger.info("📧 Conectando a SMTP Gmail en puerto 587...")
         
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            print(f"📧 Conexión establecida. Iniciando TLS...", flush=True)
+            logger.info("📧 ✅ Conexión establecida")
+            
+            logger.info("📧 Iniciando TLS...")
             server.starttls()
+            logger.info("📧 ✅ TLS iniciado")
             
-            print(f"📧 TLS iniciado. Intentando login con: {GMAIL_USER}", flush=True)
+            logger.info(f"📧 Intentando login con: {GMAIL_USER}")
             server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            logger.info("📧 ✅ Login exitoso")
             
-            print(f"📧 Login exitoso! Enviando correo a: {GMAIL_USER}...", flush=True)
+            logger.info(f"📧 Enviando correo a: {GMAIL_USER}...")
             result = server.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
             
-            print(f"✅ ¡CORREO ENVIADO CORRECTAMENTE! Resultado: {result}", flush=True)
+            logger.info(f"✅✅✅ ¡CORREO ENVIADO CORRECTAMENTE!")
+            logger.info(f"✅ Resultado del envío: {result}")
+            logger.info("=" * 60)
             return True
 
     except smtplib.SMTPAuthenticationError as e:
-        print(f"❌ ERROR DE AUTENTICACIÓN SMTP", flush=True)
-        print(f"❌ Detalles: {str(e)}", flush=True)
-        print(f"❌ Verifica que:", flush=True)
-        print(f"   - GMAIL_USER sea correcto: {GMAIL_USER}", flush=True)
-        print(f"   - GMAIL_APP_PASSWORD sea la contraseña de aplicación de Google (no la contraseña normal)", flush=True)
-        print(f"   - La autenticación de 2 factores esté habilitada en Gmail", flush=True)
-        sys.stdout.flush()
+        logger.error("=" * 60)
+        logger.error("❌ ERROR DE AUTENTICACIÓN SMTP")
+        logger.error(f"Detalles del error: {str(e)}")
+        logger.error(f"Usuario usado: {GMAIL_USER}")
+        logger.error("Verifica que:")
+        logger.error("   1. GMAIL_USER sea correcto")
+        logger.error("   2. GMAIL_APP_PASSWORD sea la contraseña de APLICACIÓN (16 caracteres)")
+        logger.error("   3. La autenticación de 2 factores esté HABILITADA en Gmail")
+        logger.error("   4. La contraseña de aplicación sea para 'Correo' en Google")
+        logger.error("=" * 60)
         return False
         
     except socket.timeout:
-        print(f"❌ TIMEOUT: No se pudo conectar a SMTP Gmail (timeout de 15 segundos)", flush=True)
-        sys.stdout.flush()
+        logger.error("=" * 60)
+        logger.error("❌ TIMEOUT: No se pudo conectar a SMTP Gmail (timeout de 15 segundos)")
+        logger.error("Posible problema de red o Gmail bloqueando a Render")
+        logger.error("=" * 60)
         return False
         
     except smtplib.SMTPException as e:
-        print(f"❌ ERROR SMTP: {type(e).__name__}", flush=True)
-        print(f"❌ Detalles: {str(e)}", flush=True)
-        sys.stdout.flush()
+        logger.error("=" * 60)
+        logger.error(f"❌ ERROR SMTP GENERAL: {type(e).__name__}")
+        logger.error(f"Detalles: {str(e)}")
+        logger.error("=" * 60)
         return False
         
     except Exception as e:
-        print(f"❌ ERROR INESPERADO: {type(e).__name__}", flush=True)
-        print(f"❌ Detalles: {str(e)}", flush=True)
+        logger.error("=" * 60)
+        logger.error(f"❌ ERROR INESPERADO: {type(e).__name__}")
+        logger.error(f"Detalles: {str(e)}")
         import traceback
-        traceback.print_exc()
-        sys.stdout.flush()
+        logger.error(traceback.format_exc())
+        logger.error("=" * 60)
         return False
 
 # ============================================================
