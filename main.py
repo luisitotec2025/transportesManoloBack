@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 import database
 import models
 import schemas
+from pydantic import BaseModel 
 
 # ------------------------------
 # Cargar variables de entorno
