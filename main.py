@@ -77,6 +77,34 @@ def get_db():
 def root():
     return {"mensaje": "🚀 Backend de Transportes Manolo activo"}
 
+# TEST: Endpoint para probar envío de correo
+@app.get("/test-email/")
+def test_email():
+    """Endpoint de prueba para verificar que el envío de correo funciona"""
+    print("🧪 TEST EMAIL: Iniciando prueba de correo...", flush=True)
+    
+    datos_prueba = {
+        "nombre": "PRUEBA TEST",
+        "telefono": "1234567890",
+        "fecha": "2025-10-17",
+        "comentario": "Este es un correo de prueba",
+        "marca": "Toyota",
+        "modelo": "Hiace",
+        "anio": 2023,
+        "placa": "TEST-123",
+        "tipo": "Van",
+        "vehiculo_id": 1,
+        "foto_url": "https://via.placeholder.com/300"
+    }
+    
+    resultado = enviar_correo_cotizacion(datos_prueba)
+    
+    return {
+        "mensaje": "Prueba de correo completada",
+        "resultado": "Exitoso" if resultado else "Fallido",
+        "check_logs": "Revisa los logs de Render para ver los detalles"
+    }
+
 # Contacto
 @app.post("/contacto/")
 def enviar_mensaje(mensaje: schemas.MensajeCreate, db: Session = Depends(get_db)):
