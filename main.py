@@ -154,8 +154,12 @@ def enviar_correo_cotizacion(datos: dict):
     """Envía correo en un thread separado para evitar timeouts"""
     def _enviar():
         try:
+            print(f"📧 Iniciando envío de correo...")
+            print(f"📧 GMAIL_USER: {GMAIL_USER}")
+            print(f"📧 GMAIL_APP_PASSWORD configurada: {bool(GMAIL_APP_PASSWORD)}")
+            
             if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-                print("⚠️ Falta GMAIL_USER o GMAIL_APP_PASSWORD en .env")
+                print("❌ ERROR: Falta GMAIL_USER o GMAIL_APP_PASSWORD en variables de entorno")
                 return False
 
             foto_html = f'<img src="{datos["foto_url"]}" alt="Foto del vehículo" style="max-width:100%;border-radius:8px;margin-top:10px;" />' \
@@ -196,23 +200,33 @@ def enviar_correo_cotizacion(datos: dict):
 
             msg.attach(MIMEText(html, "html", "utf-8"))
 
+            print(f"📧 Conectando a SMTP Gmail...")
             # ✅ IMPORTANTE: Timeout de 10 segundos
             with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
+                print(f"📧 Iniciando TLS...")
                 server.starttls()
+                print(f"📧 Intentando login con: {GMAIL_USER}")
                 server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+                print(f"📧 Login exitoso! Enviando correo...")
                 server.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
 
-            print("✅ Correo HTML enviado correctamente")
+            print("✅ ¡Correo enviado correctamente!")
             return True
 
-        except smtplib.SMTPAuthenticationError:
-            print("❌ Error de autenticación SMTP: Verifica GMAIL_USER y GMAIL_APP_PASSWORD")
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"❌ ERROR de autenticación SMTP: {str(e)}")
+            print(f"⚠️ Verifica que:")
+            print(f"   - GMAIL_USER sea correcto: {GMAIL_USER}")
+            print(f"   - GMAIL_APP_PASSWORD sea la contraseña de aplicación (no la contraseña normal)")
+            print(f"   - La autenticación de 2 factores esté habilitada en Gmail")
             return False
         except socket.timeout:
-            print("❌ Timeout al conectar con SMTP - Intenta nuevamente")
+            print("❌ TIMEOUT: No se pudo conectar a SMTP Gmail en 10 segundos")
             return False
         except Exception as e:
-            print(f"❌ Error al enviar correo: {str(e)}")
+            print(f"❌ ERROR inesperado al enviar correo: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
 
     # Ejecutar en thread para no bloquear la respuesta
