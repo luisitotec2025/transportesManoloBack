@@ -1,9 +1,7 @@
 from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List, Optional
-import shutil
 import os
 import uuid
 import smtplib
@@ -14,7 +12,10 @@ from dotenv import load_dotenv
 import database
 import models
 import schemas
-from pydantic import BaseModel 
+from pydantic import BaseModel
+
+import cloudinary
+import cloudinary.uploader
 
 # ------------------------------
 # Cargar variables de entorno
@@ -23,6 +24,19 @@ load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL")
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
+
+# ------------------------------
+# Configurar Cloudinary
+# ------------------------------
+cloudinary.config(
+    cloud_name=CLOUDINARY_CLOUD_NAME,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET,
+    secure=True
+)
 
 # ------------------------------
 # Inicialización de la app
@@ -34,7 +48,7 @@ app = FastAPI(title="API Vehículos", version="1.0")
 # ------------------------------
 origins = [
     "http://localhost:3000",  # Frontend React local
-    "https://transportesmanolofront.onrender.com"  # producción
+    "https://transportesmanolofront.onrender.com"  # Producción
 ]
 
 app.add_middleware(
@@ -65,15 +79,14 @@ def get_db():
         db.close()
 
 # ------------------------------
-# Directorio público de imágenes
-# ------------------------------
-IMAGES_DIR = os.path.join(os.getcwd(), "public", "vehiculosimg")
-os.makedirs(IMAGES_DIR, exist_ok=True)
-app.mount("/vehiculosimg", StaticFiles(directory=IMAGES_DIR), name="vehiculosimg")
-
-# ------------------------------
 # Endpoints
 # ------------------------------
+
+# Root
+@app.get("/")
+def root():
+    return {"mensaje": "🚀 Backend de Transportes Manolo activo"}
+
 # Contacto
 @app.post("/contacto/")
 def enviar_mensaje(mensaje: schemas.MensajeCreate, db: Session = Depends(get_db)):
@@ -101,15 +114,20 @@ def agregar_vehiculo(
     foto: UploadFile = File(None),
     db: Session = Depends(get_db)
 ):
-    foto_path = None
+    foto_url = None
 
     if foto:
-        ext = os.path.splitext(foto.filename)[1]
-        unique_name = f"{uuid.uuid4().hex}{ext}"
-        file_path = os.path.join(IMAGES_DIR, unique_name)
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(foto.file, buffer)
-        foto_path = f"/vehiculosimg/{unique_name}"
+        try:
+            result = cloudinary.uploader.upload(
+                foto.file,
+                folder="vehiculos",
+                public_id=f"{uuid.uuid4().hex}",
+                overwrite=True,
+                resource_type="image"
+            )
+            foto_url = result.get("secure_url")
+        except Exception as e:
+            print("❌ Error al subir imagen a Cloudinary:", e)
 
     nuevo = models.Vehiculo(
         marca=marca,
@@ -119,21 +137,14 @@ def agregar_vehiculo(
         tipo=tipo,
         capacidad=capacidad,
         observaciones=observaciones,
-        foto=foto_path
+        foto=foto_url
     )
 
     db.add(nuevo)
     db.commit()
     db.refresh(nuevo)
 
-    # URL absoluta para Render
-    image_url = f"{BACKEND_URL}{foto_path}" if foto_path else None
-
-    return {
-        "mensaje": "✅ Vehículo agregado correctamente",
-        "id": nuevo.id,
-        "foto_url": image_url
-    }
+    return {"mensaje": "✅ Vehículo agregado correctamente", "id": nuevo.id, "foto_url": foto_url}
 
 # ------------------------------
 # Función para enviar correo HTML
@@ -144,11 +155,9 @@ def enviar_correo_cotizacion(datos: dict):
             print("⚠️ Falta GMAIL_USER o GMAIL_APP_PASSWORD en .env")
             return
 
-        # Preparar foto HTML
         foto_html = f'<img src="{datos["foto_url"]}" alt="Foto del vehículo" style="max-width:100%;border-radius:8px;margin-top:10px;" />' \
                     if datos.get("foto_url") else "<p style='color:#888;'>Sin foto disponible</p>"
 
-        # Crear mensaje
         msg = MIMEMultipart("alternative")
         msg["From"] = GMAIL_USER
         msg["To"] = GMAIL_USER
@@ -209,11 +218,8 @@ def agregar_cotizacion(cotizacion: CotizacionRequest, db: Session = Depends(get_
     if not vehiculo:
         raise HTTPException(status_code=404, detail="Vehículo no encontrado")
 
-    # URL de la foto para Render
-    if vehiculo.foto:
-        foto_url = f"{BACKEND_URL}{vehiculo.foto}"
-    else:
-        foto_url = None
+    # Usar URL de Cloudinary directamente
+    foto_url = vehiculo.foto
 
     datos_correo = cotizacion.dict()
     datos_correo.update({
@@ -227,8 +233,3 @@ def agregar_cotizacion(cotizacion: CotizacionRequest, db: Session = Depends(get_
 
     enviar_correo_cotizacion(datos_correo)
     return {"mensaje": "Cotización enviada correctamente"}
-
-
-@app.get("/")
-def root():
-    return {"mensaje": "🚀 Backend de Transportes Manolo activo"}
