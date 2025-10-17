@@ -34,6 +34,7 @@ app = FastAPI(title="API Vehículos", version="1.0")
 # ------------------------------
 origins = [
     "http://localhost:3000",  # Frontend React local
+    "https://transportesmanolofront.onrender.com"  # producción
 ]
 
 app.add_middleware(
